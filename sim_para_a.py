@@ -74,8 +74,7 @@ if __name__ == '__main__':
     else:
         n_proc_vector = [1]
 
-    import time
-import matplotlib.pyplot as plt
+
 
 speed_ups = []
 times = []
