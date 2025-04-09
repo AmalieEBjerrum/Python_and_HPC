@@ -78,7 +78,7 @@ if __name__ == '__main__':
     pool = multiprocessing.Pool(n_proc)
     
     # Process buildings in parallel with static scheduling..
-    results = pool.map(process_building, building_ids, chunksize=1)
+    results = pool.map(process_building, building_ids, chunksize=n_proc)
     
     # Close the pool and wait for the work to finish
     pool.close()

@@ -1,3 +1,8 @@
+#Part of tasks 1, 2 and 3
+#Script makes a .npy file with the initial conditions and interior masks for all buildings in the dataset.
+# As well as the simulation results for each building.
+
+
 from os.path import join
 import sys
 

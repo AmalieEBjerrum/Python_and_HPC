@@ -2,10 +2,9 @@ from os.path import join
 import sys
 import numpy as np
 from multiprocessing.pool import ThreadPool
-import multiprocessing
+import multiprocessing 
 import time
 import matplotlib.pyplot as plt
-
 
 def load_data(load_dir, bid):
     SIZE = 512
@@ -43,16 +42,45 @@ def summary_stats(u, interior_mask):
         'pct_below_15': pct_below_15,
     }
 
+
+
 def process_building(bid):
     # Load floor plan data for the building
     u0, interior_mask = load_data(LOAD_DIR, bid)
     
     # Run the Jacobi iterations for the given floor plan
     u = jacobi(u0, interior_mask, MAX_ITER, ABS_TOL)
-    
+
     # Compute summary statistics
     stats = summary_stats(u, interior_mask)
     return bid, stats
+
+def speedup(n_proc_vector, building_ids):
+    speed_ups = []
+    times = []
+    baseline_time = None
+    results = None
+    all_results = []
+
+    for n_proc in n_proc_vector:
+        start = time.time()
+
+        pool = multiprocessing.Pool(n_proc)
+        results = pool.map(process_building, building_ids, chunksize= n_proc)
+        all_results.append(results)
+        pool.close()
+        pool.join()
+
+        elapsed = time.time() - start
+        times.append(elapsed)
+        if baseline_time is None:  # first run is our baseline (usually n_proc = 1)
+            baseline_time = elapsed
+            speed_ups.append(1)
+        else:
+            speed_ups.append(baseline_time / elapsed)
+        print(f"Workers: {n_proc}, Time: {elapsed:.2f} seconds, Speed-up: {speed_ups[-1]:.2f}")
+
+    return speed_ups, all_results
 
 if __name__ == '__main__':
     LOAD_DIR = '/dtu/projects/02613_2025/data/modified_swiss_dwellings/'
@@ -73,27 +101,8 @@ if __name__ == '__main__':
         n_proc_vector = [int(arg) for arg in sys.argv[2:]]
     else:
         n_proc_vector = [1]
-
-
-
-speed_ups = []
-times = []
-baseline_time = None
-
-for n_proc in n_proc_vector:
-    start = time.time()
-    pool = multiprocessing.Pool(n_proc)
-    results = pool.map(process_building, building_ids, chunksize=1)
-    pool.close()
-    pool.join()
-    elapsed = time.time() - start
-    times.append(elapsed)
-    if baseline_time is None:  # first run is our baseline (usually n_proc = 1)
-        baseline_time = elapsed
-        speed_ups.append(1)
-    else:
-        speed_ups.append(baseline_time / elapsed)
-    print(f"Workers: {n_proc}, Time: {elapsed:.2f} seconds, Speed-up: {speed_ups[-1]:.2f}")
+    
+    speed_ups, results = speedup(n_proc_vector, building_ids)
 
     # Save the speed-ups plot
     plt.figure()
@@ -104,46 +113,11 @@ for n_proc in n_proc_vector:
     plt.grid(True)
     plt.savefig("/zhome/4d/5/147570/speedup_plot.png")
     plt.close()
-    
-    
+
     # Print CSV header
     stat_keys = ['mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15']
     print('building_id, ' + ', '.join(stat_keys))
-    
+
     # Iterate through results and print summary statistics
     for bid, stats in results:
         print(f"{bid},", ", ".join(str(stats[k]) for k in stat_keys))
-
-    # Save results to CSV file
-    speed_ups = []
-    times = []
-    baseline_time = None
-
-    for n_proc in n_proc_vector:
-        start = time.time()
-        pool = multiprocessing.Pool(n_proc)
-        results = pool.map(process_building, building_ids, chunksize=1)
-        pool.close()
-        pool.join()
-        elapsed = time.time() - start
-        times.append(elapsed)
-        if baseline_time is None:  # first run is our baseline (usually n_proc = 1)
-            baseline_time = elapsed
-            speed_ups.append(1)
-        else:
-            speed_ups.append(baseline_time / elapsed)
-        print(f"Workers: {n_proc}, Time: {elapsed:.2f} seconds, Speed-up: {speed_ups[-1]:.2f}")
-
-        # Print summary statistics for each building (optional)
-        stat_keys = ['mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15']
-        print('building_id, ' + ', '.join(stat_keys))
-        for bid, stats in results:
-            print(f"{bid},", ", ".join(str(stats[k]) for k in stat_keys))
-
-    # Save the speed-up data to a CSV file
-    csv_path = "/zhome/4d/5/147570/speedup_data.csv"  # Adjust path if needed
-    with open(csv_path, "w", newline="") as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(["n_proc", "time", "speedup"])
-        for n, t, s in zip(n_proc_vector, times, speed_ups):
-            writer.writerow([n, t, s])
