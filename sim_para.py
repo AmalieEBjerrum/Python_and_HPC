@@ -3,6 +3,7 @@ import sys
 import numpy as np
 from multiprocessing.pool import ThreadPool
 import multiprocessing
+import csv
 
 
 def load_data(load_dir, bid):

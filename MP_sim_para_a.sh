@@ -12,5 +12,7 @@
 source /dtu/projects/02613_2025/conda/conda_init.sh
 conda activate 02613
 
+# Change to your home directory (or any directory where you want to save the figure)
+cd /zhome/4d/5/147570
 
 time python sim_para.py 10 1 2 4 6

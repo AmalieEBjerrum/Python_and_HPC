@@ -27,8 +27,6 @@ def jacobi(u, interior_mask, max_iter, atol=1e-6):
     return u
 
 
-
-
 def summary_stats(u, interior_mask):
     u_interior = u[1:-1, 1:-1][interior_mask]
     mean_temp = u_interior.mean()
