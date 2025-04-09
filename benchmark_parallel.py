@@ -2,8 +2,8 @@ import time
 import subprocess
 import matplotlib.pyplot as plt
 
-N_BUILDINGS = 50  # You can adjust this
-WORKERS = [1, 2, 4, 8, 12, 16]  # Try as many as your system allows
+N_BUILDINGS = 100  # You can adjust this
+WORKERS_LIST=(1 2 4 8 12 16 24 32) # Try as many as your system allows
 SERIAL_CMD = ["python3", "simulate.py", str(N_BUILDINGS)]
 PARALLEL_CMD_TEMPLATE = ["python3", "simulate_parallel_static.py", str(N_BUILDINGS)]
 
@@ -20,7 +20,7 @@ print(f"Serial time: {serial_time:.2f} seconds")
 
 # Measure parallel times
 parallel_times = []
-for n in WORKERS:
+for n in WORKERS_LIST:
     print(f"Measuring parallel runtime with {n} workers...")
     env = {"NUM_WORKERS": str(n)}
     # Use env variable or change simulate_parallel_static.py to accept n_workers as sys.argv[2]

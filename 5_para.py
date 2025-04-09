@@ -4,6 +4,7 @@ import numpy as np
 from multiprocessing.pool import ThreadPool
 import multiprocessing
 import csv
+from multiprocessing import Pool
 
 
 def load_data(load_dir, bid):
@@ -54,40 +55,42 @@ def process_building(bid):
     return bid, stats
 
 if __name__ == '__main__':
+    from time import time
+    from multiprocessing import cpu_count
+
     LOAD_DIR = '/dtu/projects/02613_2025/data/modified_swiss_dwellings/'
     MAX_ITER = 20_000
     ABS_TOL = 1e-4
-    
+
     # Load building IDs
     with open(join(LOAD_DIR, 'building_ids.txt'), 'r') as f:
         building_ids = f.read().splitlines()
 
-    if len(sys.argv) < 2:
-        N = 1
-    else:
-        N = int(sys.argv[1])
+    # Read arguments
+    N = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    worker_counts = [int(arg) for arg in sys.argv[2:]] if len(sys.argv) > 2 else [1]
     building_ids = building_ids[:N]
 
-    #Size of the pool of processes
-    if len(sys.argv)>2:
-        n_proc = int(sys.argv[2])
-    else:
-        n_proc = 1
-    
-    # Create a process pool
-    pool = multiprocessing.Pool(n_proc)
-    
-    # Process buildings in parallel with static scheduling..
-    results = pool.map(process_building, building_ids, chunksize=n_proc)
-    
-    # Close the pool and wait for the work to finish
-    pool.close()
-    pool.join()
-    
-    # Print CSV header
-    stat_keys = ['mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15']
-    print('building_id, ' + ', '.join(stat_keys))
-    
-    # Iterate through results and print summary statistics
-    for bid, stats in results:
-        print(f"{bid},", ", ".join(str(stats[k]) for k in stat_keys))
+    # Open CSV file for writing speed-up results
+    with open("speedup_results.csv", "a") as f_csv:
+        f_csv.write("workers,time\n")
+
+        for n_proc in worker_counts:
+            print(f"\nRunning with {n_proc} workers on {N} buildings...")
+            start = time()
+
+            with Pool(n_proc) as pool:
+                results = pool.map(process_building, building_ids, chunksize=len(building_ids)//n_proc)
+
+            elapsed = time() - start
+            f_csv.write(f"{n_proc},{elapsed:.4f}\n")
+            print(f"Time: {elapsed:.2f} seconds")
+
+            # Optional: print stats for first run only
+            if n_proc == worker_counts[0]:
+                stat_keys = ['mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15']
+                print('\nbuilding_id, ' + ', '.join(stat_keys))
+                for bid, stats in results:
+                    print(f"{bid},", ", ".join(str(stats[k]) for k in stat_keys))
+            
+            print("Saving speedup_results.csv to:", os.getcwd())

@@ -1,18 +1,19 @@
 #!/bin/bash
-#BSUB -J MP_Sim_Para_a
+#BSUB -J 5a_para
 #BSUB -q hpc
 #BSUB -W 0:30
 #BSUB -R "rusage[mem=10GB]"
-#BSUB -n 8
+#BSUB -n 64
 #BSUB -R "span[hosts=1]"
-#BSUB -o MP_sim_para_a.out
-#BSUB -e MP_sim_para_a.err
+#BSUB -o 5a_para.out
+#BSUB -e 5a_para.err
 
-
+# Load conda environment
 source /dtu/projects/02613_2025/conda/conda_init.sh
 conda activate 02613
 
-# Change to your home directory (or any directory where you want to save the figure)
-cd /zhome/4d/5/147570
+# Change to your working directory
+cd /zhome/64/7/156562
 
-time python sim_para.py 10 1 2 4 6
+# Run the script with various worker counts
+time python 5_para.py 100 1 2 4 8 16 32 64

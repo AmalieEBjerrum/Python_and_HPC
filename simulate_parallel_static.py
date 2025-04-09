@@ -23,8 +23,8 @@ def jacobi(u, interior_mask, max_iter, atol=1e-6):
         u_new_interior = u_new[interior_mask]
         delta = np.abs(u[1:-1, 1:-1][interior_mask] - u_new_interior).max()
         u[1:-1, 1:-1][interior_mask] = u_new_interior
-        if delta < atol:
-            break
+        #if delta < atol:
+        #    break
     return u
 
 
