@@ -80,59 +80,60 @@ if __name__ == '__main__':
     from os.path import join
     import sys
 
-    # Directory and parameters
+# Directory and parameters
     LOAD_DIR = '/dtu/projects/02613_2025/data/modified_swiss_dwellings/'
     MAX_ITER = 20_000
 
-    # Get the number of buildings as input
-    if len(sys.argv) != 2:
-        print("Usage: python 8_1.py <number_of_buildings>")
-        sys.exit(1)
-
-    try:
-        num_buildings = int(sys.argv[1])
-    except ValueError:
-        print("Error: <number_of_buildings> must be an integer.")
-        sys.exit(1)
-
-    # Load a subset of building IDs
+        # Load a subset of building IDs
     with open(join(LOAD_DIR, 'building_ids.txt'), 'r') as f:
         building_ids = f.read().splitlines()
-    building_ids = building_ids[:num_buildings]  # Use the specified number of floorplans
+
+    # Get the number of buildings as input
+    if len(sys.argv) < 2:
+        N = 1
+    else:
+        if sys.argv[1].lower() == "all":
+            N = len(building_ids)  # Use all building IDs
+        else:
+            N = int(sys.argv[1])
+    building_ids = building_ids[:N]
+
+    # Load floor plans
+    all_u0 = np.empty((N, 514, 514))
+    all_interior_mask = np.empty((N, 512, 512), dtype='bool')
+    for i, bid in enumerate(building_ids):
+        u0, interior_mask = load_data(LOAD_DIR, bid)
+        all_u0[i] = u0
+        all_interior_mask[i] = interior_mask
 
         
-
+    # Run CUDA Jacobi iterations for each floor plan
+    all_u = np.empty_like(all_u0)
     cuda_times = []
-    results = []
-
-    for bid in building_ids:
-        u, interior_mask = load_data(LOAD_DIR, bid)
+    for i, (u0, interior_mask) in enumerate(zip(all_u0, all_interior_mask)):
         start = time.time()
-        u_final = jacobi_cuda(u, interior_mask, MAX_ITER)
+        u = jacobi_cuda(u0, interior_mask, MAX_ITER)  # Use CUDA kernel
         elapsed = time.time() - start
         cuda_times.append(elapsed)
+        all_u[i] = u
+        print(f"CUDA Jacobi for {building_ids[i]}: {elapsed:.4f} seconds")
 
-        stats = summary_stats(u_final, interior_mask)
-        stats.update({
-            'building_id': bid,
-            'time_seconds': elapsed
-        })
-        results.append(stats)
+    # Compute and print summary statistics in CSV format
+    stat_keys = ['mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15']
+    print('\nbuilding_id, ' + ', '.join(stat_keys))  # CSV header
+    for bid, u, interior_mask in zip(building_ids, all_u, all_interior_mask):
+        stats = summary_stats(u, interior_mask)
+        print(f"{bid},", ", ".join(f"{stats[k]:.4f}" for k in stat_keys))
 
-        print(f"{bid}: {stats['mean_temp']:.2f}°C, std={stats['std_temp']:.2f}, "
-              f">18°C: {stats['pct_above_18']:.1f}%, <15°C: {stats['pct_below_15']:.1f}%, "
-              f"time={elapsed:.2f}s")
+    # Compute and print the average CUDA time
+    avg_cuda_time = sum(cuda_times) / len(cuda_times)
+    print(f"\nAverage CUDA Time: {avg_cuda_time:.4f} seconds")
 
-
-# Define the CSV field order
-    fieldnames = ['building_id', 'mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15', 'time_seconds']
-
-    # Save to CSV
-    with open("building_temperature_stats.csv", "w", newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(results)
-
-    print(f"\nAverage CUDA Time: {sum(cuda_times) / len(cuda_times):.4f} seconds")
-    print(f"Total CUDA Time: {sum(cuda_times):.4f} seconds")
-    print(f"Stats saved to 'building_temperature_stats.csv'")
+#save summary statistics to CSV file
+    with open('summary_statistics.csv', 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['building_id'] + stat_keys)  # CSV header
+        for bid, u, interior_mask in zip(building_ids, all_u, all_interior_mask):
+            stats = summary_stats(u, interior_mask)
+            writer.writerow([bid] + [stats[k] for k in stat_keys])
+    print("Summary statistics saved to summary_statistics.csv")
