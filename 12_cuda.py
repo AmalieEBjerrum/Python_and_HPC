@@ -2,6 +2,7 @@ import numpy as np
 from numba import cuda
 from os.path import join
 import time
+import csv
 
 
 # CUDA kernel: performs a single Jacobi iteration
@@ -43,7 +44,7 @@ def jacobi_cuda(u, interior_mask, max_iter):
     return d_u.copy_to_host()
 
 
-# CUDA kernel for masked
+# CUDA kernel for masked updates
 @cuda.jit
 def apply_mask_update(u, u_new, mask_i, mask_j, mask_len):
     idx = cuda.grid(1)
@@ -59,6 +60,19 @@ def load_data(load_dir, bid):
     u[1:-1, 1:-1] = np.load(join(load_dir, f"{bid}_domain.npy"))
     interior_mask = np.load(join(load_dir, f"{bid}_interior.npy"))
     return u, interior_mask
+
+def summary_stats(u, interior_mask):
+    u_interior = u[1:-1, 1:-1][interior_mask]
+    mean_temp = u_interior.mean()
+    std_temp = u_interior.std()
+    pct_above_18 = np.sum(u_interior > 18) / u_interior.size * 100
+    pct_below_15 = np.sum(u_interior < 15) / u_interior.size * 100
+    return {
+        'mean_temp': mean_temp,
+        'std_temp': std_temp,
+        'pct_above_18': pct_above_18,
+        'pct_below_15': pct_below_15,
+    }
 
 
 if __name__ == '__main__':
@@ -86,18 +100,39 @@ if __name__ == '__main__':
         building_ids = f.read().splitlines()
     building_ids = building_ids[:num_buildings]  # Use the specified number of floorplans
 
-    # Time the CUDA-accelerated Jacobi function
+        
+
     cuda_times = []
+    results = []
+
     for bid in building_ids:
         u, interior_mask = load_data(LOAD_DIR, bid)
         start = time.time()
-        jacobi_cuda(u, interior_mask, MAX_ITER)  # No ABS_TOL for CUDA version
+        u_final = jacobi_cuda(u, interior_mask, MAX_ITER)
         elapsed = time.time() - start
         cuda_times.append(elapsed)
-        print(f"CUDA Jacobi for {bid}: {elapsed:.4f} seconds")
 
-    # Compute and print the average CUDA time
-    avg_cuda_time = sum(cuda_times) / len(cuda_times)
-    print(f"\nAverage CUDA Time: {avg_cuda_time:.4f} seconds")
-    print(f"All time CUDA times: {sum(cuda_times):.4f} seconds")
-    print(f"Number of buildings processed: {num_buildings}")
+        stats = summary_stats(u_final, interior_mask)
+        stats.update({
+            'building_id': bid,
+            'time_seconds': elapsed
+        })
+        results.append(stats)
+
+        print(f"{bid}: {stats['mean_temp']:.2f}°C, std={stats['std_temp']:.2f}, "
+              f">18°C: {stats['pct_above_18']:.1f}%, <15°C: {stats['pct_below_15']:.1f}%, "
+              f"time={elapsed:.2f}s")
+
+
+# Define the CSV field order
+    fieldnames = ['building_id', 'mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15', 'time_seconds']
+
+    # Save to CSV
+    with open("building_temperature_stats.csv", "w", newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(results)
+
+    print(f"\nAverage CUDA Time: {sum(cuda_times) / len(cuda_times):.4f} seconds")
+    print(f"Total CUDA Time: {sum(cuda_times):.4f} seconds")
+    print(f"Stats saved to 'building_temperature_stats.csv'")
