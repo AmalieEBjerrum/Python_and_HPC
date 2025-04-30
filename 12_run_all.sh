@@ -3,7 +3,7 @@
 #BSUB -J 12_run_all
 #BSUB -n 4
 #BSUB -R "span[hosts=1]"
-#BSUB -R "rusage[mem=4GB]"
+#BSUB -R "rusage[mem=1GB]"
 #BSUB -gpu "num=1:mode=exclusive_process" 
 #BSUB -W 00:30 
 #BSUB -o 12_run_all.out
