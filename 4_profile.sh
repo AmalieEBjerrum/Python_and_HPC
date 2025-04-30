@@ -4,7 +4,7 @@
 #BSUB -W 1:30
 #BSUB -R "rusage[mem=10GB]"
 #BSUB -R "select[model==XeonGold6226R]"
-#BSUB -n 4
+#BSUB -n 32
 #BSUB -R "span[hosts=1]"
 #BSUB -o 4_profile.out
 #BSUB -e 4_profile.err
