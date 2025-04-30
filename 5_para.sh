@@ -1,12 +1,13 @@
 #!/bin/bash
-#BSUB -J 5a_para
+#BSUB -J 5_para
 #BSUB -q hpc
 #BSUB -W 0:30
 #BSUB -R "rusage[mem=10GB]"
+#BSUB -R "select[model==XeonGold6226R]"
 #BSUB -n 64
 #BSUB -R "span[hosts=1]"
-#BSUB -o 5a_para.out
-#BSUB -e 5a_para.err
+#BSUB -o 5_para.out
+#BSUB -e 5_para.err
 
 # Load conda environment
 source /dtu/projects/02613_2025/conda/conda_init.sh
