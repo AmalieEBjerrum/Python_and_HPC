@@ -93,4 +93,4 @@ if __name__ == '__main__':
                 for bid, stats in results:
                     print(f"{bid},", ", ".join(str(stats[k]) for k in stat_keys))
             
-            print("Saving speedup_results.csv to:", os.getcwd())
+            print("Saving speedup_results.csv to:")
