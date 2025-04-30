@@ -5,13 +5,13 @@ import time
 import sys
 
 
-# CUDA kernel: performs a single Jacobi iteration
+# CUDA kernel: performs Jacobi update only on interior_mask points
 @cuda.jit
-def jacobi_kernel(u, u_new, n, m):
-    i, j = cuda.grid(2)
-
-    # Work only on interior points (not the boundary)
-    if 1 <= i < n - 1 and 1 <= j < m - 1:
+def jacobi_kernel_masked(u, u_new, mask_i, mask_j, mask_len):
+    idx = cuda.grid(1)
+    if idx < mask_len:
+        i = mask_i[idx] + 1
+        j = mask_j[idx] + 1
         u_new[i, j] = 0.25 * (u[i+1, j] + u[i-1, j] + u[i, j+1] + u[i, j-1])
 
 def jacobi_cuda(u, interior_mask, max_iter):
@@ -19,39 +19,26 @@ def jacobi_cuda(u, interior_mask, max_iter):
     n, m = u.shape
 
     # Transfer arrays to device
-    d_u = cuda.to_device(u)
-    d_u_new = cuda.device_array_like(d_u)
+    d_u = cuda.to_device(u.copy())
+    d_u_new = cuda.to_device(u.copy())
 
-    # Thread block and grid dimensions
-    threads_per_block = (16, 16)
-    blocks_per_grid_x = (n + threads_per_block[0] - 1) // threads_per_block[0]
-    blocks_per_grid_y = (m + threads_per_block[1] - 1) // threads_per_block[1]
-    blocks_per_grid = (blocks_per_grid_x, blocks_per_grid_y)
-
-    # Transfer the mask once!
     mask_i, mask_j = np.where(interior_mask)
-    d_mask_i = cuda.to_device(np.ascontiguousarray(mask_i))
-    d_mask_j = cuda.to_device(np.ascontiguousarray(mask_j))
+    mask_i = np.ascontiguousarray(mask_i, dtype=np.int32)
+    mask_j = np.ascontiguousarray(mask_j, dtype=np.int32)
+    d_mask_i = cuda.to_device(mask_i)
+    d_mask_j = cuda.to_device(mask_j)
+    mask_len = len(mask_i)
+
+    # Thread config for 1D kernel
+    threads_per_block = 128
+    blocks_per_grid = (mask_len + threads_per_block - 1) // threads_per_block
 
     for _ in range(max_iter):
-        jacobi_kernel[blocks_per_grid, threads_per_block](d_u, d_u_new, n, m)
-
-        apply_mask_update[blocks_per_grid, threads_per_block](d_u, d_u_new, d_mask_i, d_mask_j, len(mask_i))
-
-        # Swap the grids
-        d_u, d_u_new = d_u_new, d_u
+        jacobi_kernel_masked[blocks_per_grid, threads_per_block](d_u, d_u_new, d_mask_i, d_mask_j, mask_len)
+        d_u, d_u_new = d_u_new, d_u  # Swap pointers
 
     return d_u.copy_to_host()
 
-
-# CUDA kernel for masked
-@cuda.jit
-def apply_mask_update(u, u_new, mask_i, mask_j, mask_len):
-    idx = cuda.grid(1)
-    if idx < mask_len:
-        i = mask_i[idx]
-        j = mask_j[idx]
-        u[i, j] = u_new[i, j]
 
 # Load data function
 def load_data(load_dir, bid):
@@ -125,4 +112,5 @@ if __name__ == '__main__':
 
     # Compute and print the average CUDA time
     avg_cuda_time = sum(cuda_times) / len(cuda_times)
+    print(f"Total CUDA Time: {sum(cuda_times):.4f} seconds")
     print(f"\nAverage CUDA Time: {avg_cuda_time:.4f} seconds")
