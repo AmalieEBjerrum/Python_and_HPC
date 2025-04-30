@@ -1,11 +1,11 @@
-#!/bin/sh
-#BSUB -q c02613
+#!/bin/bash
 #BSUB -J 7_NumbaJIT
-#BSUB -n 4 
+#BSUB -q hpc
+#BSUB -W 1:30
+#BSUB -R "rusage[mem=1GB]"
+#BSUB -R "select[model==XeonGold6226R]"
+#BSUB -n 4
 #BSUB -R "span[hosts=1]"
-#BSUB -R "rusage[mem=4GB]"
-#BSUB -gpu "num=1:mode=exclusive_process" 
-#BSUB -W 00:30 
 #BSUB -o 7_NumbaJIT.out
 #BSUB -e 7_NumbaJIT.err
 
