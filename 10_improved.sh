@@ -13,5 +13,5 @@
 source /dtu/projects/02613_2025/conda/conda_init.sh
 conda activate 02613
 
-time nsys profile -o 10_improved_2 python 10_improved.py 20
+time nsys profile -o 10_improved_forreal python 10_improved.py 100
 
