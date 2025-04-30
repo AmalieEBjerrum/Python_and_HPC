@@ -1,11 +1,16 @@
 from os.path import join
 import sys
 import numpy as np
-from multiprocessing.pool import ThreadPool
-import multiprocessing
-import csv
 from multiprocessing import Pool
+from functools import partial
+import time
+import matplotlib.pyplot as plt
+from functools import partial
+import os
 
+LOAD_DIR = ''
+MAX_ITER = 0
+ABS_TOL = 0.0
 
 def load_data(load_dir, bid):
     SIZE = 512
@@ -17,14 +22,11 @@ def load_data(load_dir, bid):
 
 def jacobi(u, interior_mask, max_iter, atol=1e-6):
     u = np.copy(u)
-
-    for i in range(max_iter):
-        # Compute average of left, right, up and down neighbors, see eq. (1)
+    for _ in range(max_iter):
         u_new = 0.25 * (u[1:-1, :-2] + u[1:-1, 2:] + u[:-2, 1:-1] + u[2:, 1:-1])
         u_new_interior = u_new[interior_mask]
         delta = np.abs(u[1:-1, 1:-1][interior_mask] - u_new_interior).max()
         u[1:-1, 1:-1][interior_mask] = u_new_interior
-
         if delta < atol:
             break
     return u
@@ -43,54 +45,63 @@ def summary_stats(u, interior_mask):
         'pct_below_15': pct_below_15,
     }
 
+
 def process_building(bid):
-    # Load floor plan data for the building
     u0, interior_mask = load_data(LOAD_DIR, bid)
-    
-    # Run the Jacobi iterations for the given floor plan
     u = jacobi(u0, interior_mask, MAX_ITER, ABS_TOL)
-    
-    # Compute summary statistics
     stats = summary_stats(u, interior_mask)
     return bid, stats
 
-if __name__ == '__main__':
-    from time import time
-    from multiprocessing import cpu_count
 
+def dynamic_speedup(n_proc_vector, building_ids):
+    speed_ups = []
+    times = []
+    baseline_time = None
+    all_results = []
+
+    for n_proc in n_proc_vector:
+        print(f"\nRunning with {n_proc} workers...")
+        start = time.time()
+
+        with Pool(n_proc) as pool:
+            results = list(pool.imap_unordered(process_building, building_ids, chunksize=1))  # dynamic scheduling
+
+        elapsed = time.time() - start
+        times.append(elapsed)
+        all_results.append(results)
+
+        if baseline_time is None:
+            baseline_time = elapsed
+            speed_ups.append(1.0)
+        else:
+            speed_ups.append(baseline_time / elapsed)
+
+        print(f"Workers: {n_proc}, Time: {elapsed:.2f} sec, Speed-up: {speed_ups[-1]:.2f}")
+
+    return speed_ups, all_results
+
+
+if __name__ == '__main__':
     LOAD_DIR = '/dtu/projects/02613_2025/data/modified_swiss_dwellings/'
-    MAX_ITER = 20_000
+    MAX_ITER = 20000
     ABS_TOL = 1e-4
 
-    # Load building IDs
     with open(join(LOAD_DIR, 'building_ids.txt'), 'r') as f:
         building_ids = f.read().splitlines()
 
-    # Read arguments
     N = int(sys.argv[1]) if len(sys.argv) > 1 else 1
-    worker_counts = [int(arg) for arg in sys.argv[2:]] if len(sys.argv) > 2 else [1]
     building_ids = building_ids[:N]
 
-    # Open CSV file for writing speed-up results
-    with open("speedup_results.csv", "a") as f_csv:
-        f_csv.write("workers,time\n")
+    if len(sys.argv) > 2:
+        n_proc_vector = [int(arg) for arg in sys.argv[2:]]
+    else:
+        n_proc_vector = [1]
 
-        for n_proc in worker_counts:
-            print(f"\nRunning with {n_proc} workers on {N} buildings...")
-            start = time()
+    speed_ups, all_results = dynamic_speedup(n_proc_vector, building_ids)
 
-            with Pool(n_proc) as pool:
-                results = pool.map(process_building, building_ids, chunksize=len(building_ids)//n_proc)
+    # Print stats for first run
+    stat_keys = ['mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15']
+    print("\nbuilding_id, " + ', '.join(stat_keys))
+    for bid, stats in all_results[0]:
+        print(f"{bid},", ", ".join(str(stats[k]) for k in stat_keys))
 
-            elapsed = time() - start
-            f_csv.write(f"{n_proc},{elapsed:.4f}\n")
-            print(f"Time: {elapsed:.2f} seconds")
-
-            # Optional: print stats for first run only
-            if n_proc == worker_counts[0]:
-                stat_keys = ['mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15']
-                print('\nbuilding_id, ' + ', '.join(stat_keys))
-                for bid, stats in results:
-                    print(f"{bid},", ", ".join(str(stats[k]) for k in stat_keys))
-            
-            print("Saving speedup_results.csv to:", os.getcwd())
