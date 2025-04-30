@@ -1,17 +1,19 @@
 #!/bin/sh
 #BSUB -q c02613
-#BSUB -J 10_profile
-#BSUB -n 4 
+#BSUB -J 7_NumbaJIT
+#BSUB -n 32 
 #BSUB -R "span[hosts=1]"
 #BSUB -R "rusage[mem=4GB]"
 #BSUB -gpu "num=1:mode=exclusive_process" 
 #BSUB -W 00:30 
-#BSUB -o 10_profile.out
-#BSUB -e 10_profile.err
+#BSUB -o 7_NumbaJIT.out
+#BSUB -e 7_NumbaJIT.err
 
+
+set -x
 
 source /dtu/projects/02613_2025/conda/conda_init.sh
 conda activate 02613
 
-time nsys profile -o 10_profile_forreal python 10_profile.py 100
-
+# Run the Python script
+time python 7_NumbaJIT.py 100
