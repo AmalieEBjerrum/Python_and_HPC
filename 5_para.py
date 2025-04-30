@@ -94,6 +94,8 @@ if __name__ == '__main__':
         N = int(sys.argv[1])
     building_ids = building_ids[:N]
 
+    worker_counts = [int(arg) for arg in sys.argv[2:]] if len(sys.argv) > 2 else [1]
+
     # Load floor plans
     all_u0 = np.empty((N, 514, 514))
     all_interior_mask = np.empty((N, 512, 512), dtype='bool')
@@ -110,6 +112,9 @@ if __name__ == '__main__':
     for i, (u0, interior_mask) in enumerate(zip(all_u0, all_interior_mask)):
         u = jacobi(u0, interior_mask, MAX_ITER, ABS_TOL)
         all_u[i] = u
+
+    # Speedup analysis
+    speedup(worker_counts, building_ids)    
 
     # Print summary statistics in CSV format
     stat_keys = ['mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15']

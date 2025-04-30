@@ -17,4 +17,4 @@ conda activate 02613
 cd /zhome/64/7/156562
 
 # Run the script with various worker counts
-time python 5_para.py 100 1 2 4 8 16 32 
+time python 5_para.py 100 1 2 4 8 16 32
