@@ -1,68 +1,72 @@
+import numpy as np
+from numba import cuda
 from os.path import join
+import time
+import csv
 import sys
 
-import numpy as np
-import cupy as cp
+# CUDA kernel: performs Jacobi update only on interior_mask points
+@cuda.jit
+def jacobi_kernel_masked(u, u_new, mask_i, mask_j, mask_len):
+    idx = cuda.grid(1)
+    if idx < mask_len:
+        i = mask_i[idx] + 1
+        j = mask_j[idx] + 1
+        u_new[i, j] = 0.25 * (u[i+1, j] + u[i-1, j] + u[i, j+1] + u[i, j-1])
 
+def jacobi_cuda(u, interior_mask, max_iter):
+    u = np.array(u, dtype=np.float32)
+    n, m = u.shape
+
+    # Transfer arrays to device
+    d_u = cuda.to_device(u.copy())
+    d_u_new = cuda.to_device(u.copy())
+
+    mask_i, mask_j = np.where(interior_mask)
+    mask_i = np.ascontiguousarray(mask_i, dtype=np.int32)
+    mask_j = np.ascontiguousarray(mask_j, dtype=np.int32)
+    d_mask_i = cuda.to_device(mask_i)
+    d_mask_j = cuda.to_device(mask_j)
+    mask_len = len(mask_i)
+
+    # Thread config for 1D kernel
+    threads_per_block = 128
+    blocks_per_grid = (mask_len + threads_per_block - 1) // threads_per_block
+
+    for _ in range(max_iter):
+        jacobi_kernel_masked[blocks_per_grid, threads_per_block](d_u, d_u_new, d_mask_i, d_mask_j, mask_len)
+        d_u, d_u_new = d_u_new, d_u  # Swap pointers
+
+    return d_u.copy_to_host()
+
+# Data loader
 def load_data(load_dir, bid):
     SIZE = 512
-    domain_np = np.load(join(load_dir, f"{bid}_domain.npy"))
-    interior_mask_np = np.load(join(load_dir, f"{bid}_interior.npy"))
-
-    # Transfer to GPU
-    u = cp.zeros((SIZE + 2, SIZE + 2))
-    u[1:-1, 1:-1] = cp.asarray(domain_np)
-    interior_mask = cp.asarray(interior_mask_np)
-
+    u = np.zeros((SIZE + 2, SIZE + 2))
+    u[1:-1, 1:-1] = np.load(join(load_dir, f"{bid}_domain.npy"))
+    interior_mask = np.load(join(load_dir, f"{bid}_interior.npy"))
     return u, interior_mask
 
-def jacobi_batch(u_batch, interior_mask_batch, max_iter, atol=1e-6):
-    """
-    u_batch: (N, 514, 514)
-    interior_mask_batch: (N, 512, 512)
-    """
-    u = cp.copy(u_batch)
 
-    for i in range(max_iter):
-        # Compute u_new: average of neighbors, vectorized over batch
-        u_new = 0.25 * (
-            u[:, 1:-1, :-2] + u[:, 1:-1, 2:] +
-            u[:, :-2, 1:-1] + u[:, 2:, 1:-1]
-        )
+# Summary statistics
+def summary_stats(u, interior_mask):
+    u_interior = u[1:-1, 1:-1][interior_mask]
+    mean_temp = u_interior.mean()
+    std_temp = u_interior.std()
+    pct_above_18 = np.sum(u_interior > 18) / u_interior.size * 100
+    pct_below_15 = np.sum(u_interior < 15) / u_interior.size * 100
+    return {
+        'mean_temp': mean_temp,
+        'std_temp': std_temp,
+        'pct_above_18': pct_above_18,
+        'pct_below_15': pct_below_15,
+    }
 
-        # Only update interior points
-        u_center = u[:, 1:-1, 1:-1]
-        delta = cp.abs(u_center - u_new)
 
-        max_delta = cp.max(delta * interior_mask_batch)
-
-        # Update only interior points
-        u_center[interior_mask_batch] = u_new[interior_mask_batch]
-
-        if max_delta < atol:
-            break
-
-    return u
-
-def summary_stats_batch(u_batch, mask_batch):
-    N = u_batch.shape[0]
-    results = []
-
-    for i in range(N):
-        u_interior = u_batch[i, 1:-1, 1:-1][mask_batch[i]]
-        stats = cp.asarray([
-            u_interior.mean(),
-            u_interior.std(),
-            cp.sum(u_interior > 18) / u_interior.size * 100,
-            cp.sum(u_interior < 15) / u_interior.size * 100
-        ])
-        results.append(stats)
-
-    results = cp.stack(results).get()
-    return results
-
+# Main function
 if __name__ == '__main__':
     LOAD_DIR = '/dtu/projects/02613_2025/data/modified_swiss_dwellings/'
+    MAX_ITER = 20_000
 
     with open(join(LOAD_DIR, 'building_ids.txt'), 'r') as f:
         building_ids = f.read().splitlines()
@@ -70,28 +74,45 @@ if __name__ == '__main__':
     if len(sys.argv) < 2:
         N = 1
     else:
-        N = int(sys.argv[1])
+        if sys.argv[1].lower() == "all":
+            N = len(building_ids)
+        else:
+            N = int(sys.argv[1])
     building_ids = building_ids[:N]
 
-    # Load floor plans
-    all_u0 = cp.empty((N, 514, 514))
-    all_interior_mask = cp.empty((N, 512, 512), dtype=cp.bool_)
+    all_u0 = np.empty((N, 514, 514), dtype=np.float32)
+    all_interior_mask = np.empty((N, 512, 512), dtype=bool)
     for i, bid in enumerate(building_ids):
         u0, interior_mask = load_data(LOAD_DIR, bid)
         all_u0[i] = u0
         all_interior_mask[i] = interior_mask
 
-    # Run vectorized Jacobi
-    MAX_ITER = 20_000
-    ABS_TOL = 1e-4
+    all_u = np.empty_like(all_u0)
+    cuda_times = []
 
-    all_u = jacobi_batch(all_u0, all_interior_mask, MAX_ITER, ABS_TOL)
+    for i, (u0, interior_mask) in enumerate(zip(all_u0, all_interior_mask)):
+        start = time.time()
+        u = jacobi_cuda(u0, interior_mask, MAX_ITER)
+        elapsed = time.time() - start
+        cuda_times.append(elapsed)
+        all_u[i] = u
+        print(f"CUDA Jacobi for {building_ids[i]}: {elapsed:.4f} seconds")
 
-    # Compute stats all at once
     stat_keys = ['mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15']
-    all_stats = summary_stats_batch(all_u, all_interior_mask)
+    print('\nbuilding_id, ' + ', '.join(stat_keys))  # CSV header
+    for bid, u, interior_mask in zip(building_ids, all_u, all_interior_mask):
+        stats = summary_stats(u, interior_mask)
+        print(f"{bid},", ", ".join(f"{stats[k]:.4f}" for k in stat_keys))
 
-    # Print CSV
-    print('building_id, ' + ', '.join(stat_keys))
-    for bid, stats in zip(building_ids, all_stats):
-        print(f"{bid},", ", ".join(str(x) for x in stats))
+    avg_cuda_time = sum(cuda_times) / len(cuda_times)
+    print(f"\nAverage CUDA Time: {avg_cuda_time:.4f} seconds")
+
+    # Save to CSV
+    with open('summary_statistics.csv', 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['building_id'] + stat_keys)
+        for bid, u, interior_mask in zip(building_ids, all_u, all_interior_mask):
+            stats = summary_stats(u, interior_mask)
+            writer.writerow([bid] + [stats[k] for k in stat_keys])
+
+    print("Summary statistics saved to summary_statistics.csv")
