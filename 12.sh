@@ -5,7 +5,7 @@
 #BSUB -e 12_jacobi_error.log     
 #BSUB -n 4                          
 #BSUB -R "span[hosts=1]"            
-#BSUB -W 01:00                      
+#BSUB -W 05:00                      
 #BSUB -R "rusage[mem=3GB]"
 #BSUB -gpu "num=1:mode=shared"
 
