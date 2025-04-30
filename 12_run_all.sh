@@ -1,10 +1,10 @@
 #!/bin/sh
-#BSUB -q c02613
+#BSUB -q gpua100
 #BSUB -J 12_run_all
 #BSUB -n 4
 #BSUB -R "span[hosts=1]"
 #BSUB -R "rusage[mem=2GB]"
-#BSUB -gpu "num=1:mode=exclusive_process" 
+#BSUB -gpu "num=1:mode=shared"
 #BSUB -W 04:00 
 #BSUB -o 12_run_all.out
 #BSUB -e 12_run_all.err

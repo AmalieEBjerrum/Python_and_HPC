@@ -1,6 +1,6 @@
 #!/bin/bash
 #BSUB -J 6_dynamic
-#BSUB -q c02613
+#BSUB -q hpc
 #BSUB -W 0:30
 #BSUB -R "rusage[mem=1GB]"
 #BSUB -n 32

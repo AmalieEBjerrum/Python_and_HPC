@@ -2,7 +2,15 @@ from os.path import join
 import sys
 import numpy as np
 from multiprocessing import Pool
+from functools import partial
 import time
+import matplotlib.pyplot as plt
+from functools import partial
+import os
+
+LOAD_DIR = ''
+MAX_ITER = 0
+ABS_TOL = 0.0
 
 def load_data(load_dir, bid):
     SIZE = 512
@@ -10,6 +18,7 @@ def load_data(load_dir, bid):
     u[1:-1, 1:-1] = np.load(join(load_dir, f"{bid}_domain.npy"))
     interior_mask = np.load(join(load_dir, f"{bid}_interior.npy"))
     return u, interior_mask
+
 
 def jacobi(u, interior_mask, max_iter, atol=1e-6):
     u = np.copy(u)
@@ -21,6 +30,7 @@ def jacobi(u, interior_mask, max_iter, atol=1e-6):
         if delta < atol:
             break
     return u
+
 
 def summary_stats(u, interior_mask):
     u_interior = u[1:-1, 1:-1][interior_mask]
@@ -35,11 +45,13 @@ def summary_stats(u, interior_mask):
         'pct_below_15': pct_below_15,
     }
 
+
 def process_building(bid):
     u0, interior_mask = load_data(LOAD_DIR, bid)
     u = jacobi(u0, interior_mask, MAX_ITER, ABS_TOL)
     stats = summary_stats(u, interior_mask)
     return bid, stats
+
 
 def dynamic_speedup(n_proc_vector, building_ids):
     speed_ups = []
@@ -68,24 +80,28 @@ def dynamic_speedup(n_proc_vector, building_ids):
 
     return speed_ups, all_results
 
+
 if __name__ == '__main__':
     LOAD_DIR = '/dtu/projects/02613_2025/data/modified_swiss_dwellings/'
-    MAX_ITER = 20_000
+    MAX_ITER = 20000
     ABS_TOL = 1e-4
 
-    # Load building IDs
     with open(join(LOAD_DIR, 'building_ids.txt'), 'r') as f:
         building_ids = f.read().splitlines()
 
     N = int(sys.argv[1]) if len(sys.argv) > 1 else 1
-    worker_counts = [int(arg) for arg in sys.argv[2:]] if len(sys.argv) > 2 else [1]
     building_ids = building_ids[:N]
 
-    # Run dynamic scheduling and get results
-    speed_ups, all_results = dynamic_speedup(worker_counts, building_ids)
+    if len(sys.argv) > 2:
+        n_proc_vector = [int(arg) for arg in sys.argv[2:]]
+    else:
+        n_proc_vector = [1]
 
-    # Print stats from first dynamic run
+    speed_ups, all_results = dynamic_speedup(n_proc_vector, building_ids)
+
+    # Print stats for first run
     stat_keys = ['mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15']
-    print('\nbuilding_id, ' + ', '.join(stat_keys))
-    for bid, stats in all_results[0]:  # results from first run
+    print("\nbuilding_id, " + ', '.join(stat_keys))
+    for bid, stats in all_results[0]:
         print(f"{bid},", ", ".join(str(stats[k]) for k in stat_keys))
+

@@ -1,6 +1,6 @@
 #!/bin/bash
 #BSUB -J 5_para
-#BSUB -q c02613
+#BSUB -q hpc
 #BSUB -W 0:30
 #BSUB -R "rusage[mem=1GB]"
 #BSUB -R "select[model==XeonGold6226R]"
