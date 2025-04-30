@@ -3,7 +3,7 @@
 #BSUB -q c02613
 #BSUB -W 0:30
 #BSUB -R "rusage[mem=10GB]"
-#BSUB -n 32
+#BSUB -n 4
 #BSUB -R "span[hosts=1]"
 #BSUB -o 8_Cudakernel.out
 #BSUB -e 8_Cudakernel.err

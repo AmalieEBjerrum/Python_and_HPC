@@ -1,14 +1,13 @@
 #!/bin/sh
 #BSUB -q c02613
 #BSUB -J 12_run_all
-#BSUB -n 32 
+#BSUB -n 4
 #BSUB -R "span[hosts=1]"
 #BSUB -R "rusage[mem=4GB]"
 #BSUB -gpu "num=1:mode=exclusive_process" 
 #BSUB -W 00:30 
 #BSUB -o 12_run_all.out
 #BSUB -e 12_run_all.err
-
 
 
 
