@@ -2,8 +2,9 @@
 #BSUB -J 6_dynamic
 #BSUB -q hpc
 #BSUB -W 0:30
-#BSUB -R "rusage[mem=128MB]"
+#BSUB -R "rusage[mem=3GB]"
 #BSUB -n 32
+#BSUB -R "select[model==XeonGold6226R]"
 #BSUB -R "span[hosts=1]"
 #BSUB -o 6_dynamic.out
 #BSUB -e 6_dynamic.err

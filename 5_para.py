@@ -1,13 +1,10 @@
-#Part of tasks 1, 2 and 3
-#Script makes a .npy file with the initial conditions and interior masks for all buildings in the dataset.
-# As well as the simulation results for each building.
-
-
 from os.path import join
 import sys
-
 import numpy as np
-
+from multiprocessing.pool import ThreadPool
+import multiprocessing 
+import time
+import matplotlib.pyplot as plt
 
 def load_data(load_dir, bid):
     SIZE = 512
@@ -46,6 +43,45 @@ def summary_stats(u, interior_mask):
     }
 
 
+
+def process_building(bid):
+    # Load floor plan data for the building
+    u0, interior_mask = load_data(LOAD_DIR, bid)
+    
+    # Run the Jacobi iterations for the given floor plan
+    u = jacobi(u0, interior_mask, MAX_ITER, ABS_TOL)
+
+    # Compute summary statistics
+    stats = summary_stats(u, interior_mask)
+    return bid, stats
+
+def speedup(n_proc_vector, building_ids):
+    speed_ups = []
+    times = []
+    baseline_time = None
+    results = None
+    all_results = []
+
+    for n_proc in n_proc_vector:
+        start = time.time()
+
+        pool = multiprocessing.Pool(n_proc)
+        results = pool.map(process_building, building_ids, chunksize= n_proc)
+        all_results.append(results)
+        pool.close()
+        pool.join()
+
+        elapsed = time.time() - start
+        times.append(elapsed)
+        if baseline_time is None:  # first run is our baseline (usually n_proc = 1)
+            baseline_time = elapsed
+            speed_ups.append(1)
+        else:
+            speed_ups.append(baseline_time / elapsed)
+        print(f"Workers: {n_proc}, Time: {elapsed:.2f} seconds, Speed-up: {speed_ups[-1]:.2f}")
+
+    return speed_ups, all_results
+
 if __name__ == '__main__':
     # Load data
     LOAD_DIR = '/dtu/projects/02613_2025/data/modified_swiss_dwellings/'
@@ -65,23 +101,15 @@ if __name__ == '__main__':
         u0, interior_mask = load_data(LOAD_DIR, bid)
         all_u0[i] = u0
         all_interior_mask[i] = interior_mask
-    
-    np.save('initial_conditions.npy', all_u0)
-    np.save('interior_masks.npy', all_interior_mask)
 
     # Run jacobi iterations for each floor plan
     MAX_ITER = 20_000
     ABS_TOL = 1e-4
 
     all_u = np.empty_like(all_u0)
-    results = np.empty((N, 514, 514))  # Preallocate for efficiency
     for i, (u0, interior_mask) in enumerate(zip(all_u0, all_interior_mask)):
         u = jacobi(u0, interior_mask, MAX_ITER, ABS_TOL)
         all_u[i] = u
-        results[i] = u  # Keep the 2D grid shape
-
-    # Save all results into a single numpy file, each entry corresponding to a simulation
-    np.save('simulation_results.npy', results)
 
     # Print summary statistics in CSV format
     stat_keys = ['mean_temp', 'std_temp', 'pct_above_18', 'pct_below_15']
